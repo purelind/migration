@@ -34,6 +34,7 @@ const (
 
 // RegionFeedEvent from the kv layer.
 // Only one of the event will be setted.
+//
 //msgp:ignore RegionFeedEvent
 type RegionFeedEvent struct {
 	Val      *RawKVEntry
@@ -53,13 +54,13 @@ func (e *RegionFeedEvent) GetValue() interface{} {
 		return e.Val
 	} else if e.Resolved != nil {
 		return e.Resolved
-	} else {
-		return nil
 	}
+	return nil
 }
 
 // ResolvedSpan guarantees all the KV value event
 // with commit ts less than ResolvedTs has been emitted.
+//
 //msgp:ignore ResolvedSpan
 type ResolvedSpan struct {
 	Span       regionspan.ComparableSpan

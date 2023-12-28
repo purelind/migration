@@ -32,8 +32,7 @@ import (
 	"github.com/pingcap/kvproto/pkg/errorpb"
 	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pingcap/log"
-	"github.com/pingcap/tidb/kv"
-	"github.com/pingcap/tidb/store/mockstore/mockcopr"
+	"github.com/pingcap/tidb/pkg/store/mockstore/mockcopr"
 	"github.com/stretchr/testify/require"
 	"github.com/tikv/client-go/v2/oracle"
 	"github.com/tikv/client-go/v2/testutils"
@@ -275,6 +274,10 @@ loop:
 	return nil
 }
 
+func (s *mockChangeDataService) EventFeedV2(_server cdcpb.ChangeData_EventFeedV2Server) error {
+	panic("unimplemented")
+}
+
 func newMockService(
 	ctx context.Context,
 	c *check.C,
@@ -399,9 +402,8 @@ func (s *clientSuite) TestConnectOfflineTiKV(c *check.C) {
 	cluster.ChangeLeader(3, 5)
 
 	ts, err := kvStorage.CurrentTimestamp(oracle.GlobalTxnScope)
-	ver := kv.NewVersion(ts)
 	c.Assert(err, check.IsNil)
-	ch2 <- makeEvent(ver.Ver)
+	ch2 <- makeEvent(ts)
 	var event model.RegionFeedEvent
 	// consume the first resolved ts event, which is sent before region starts
 	<-eventCh
@@ -417,7 +419,7 @@ func (s *clientSuite) TestConnectOfflineTiKV(c *check.C) {
 	case <-time.After(time.Second):
 		c.Fatalf("reconnection not succeed in 1 second")
 	}
-	checkEvent(event, GetSafeResolvedTs(ver.Ver))
+	checkEvent(event, GetSafeResolvedTs(ts))
 
 	// check gRPC connection active counter is updated correctly
 	bucket, ok := grpcPool.bucketConns[invalidStore]
@@ -2692,10 +2694,10 @@ func (s *clientSuite) TestResolveLockNoCandidate(c *check.C) {
 // TestFailRegionReentrant tests one region could be failover multiple times,
 // kv client must avoid duplicated `onRegionFail` call for the same region.
 // In this test
-// 1. An `unknownErr` is sent to kv client first to trigger `handleSingleRegionError` in region worker.
-// 2. We delay the kv client to re-create a new region request by 500ms via failpoint.
-// 3. Before new region request is fired, simulate kv client `stream.Recv` returns an error, the stream
-//    handler will signal region worker to exit, which will evict all active region states then.
+//  1. An `unknownErr` is sent to kv client first to trigger `handleSingleRegionError` in region worker.
+//  2. We delay the kv client to re-create a new region request by 500ms via failpoint.
+//  3. Before new region request is fired, simulate kv client `stream.Recv` returns an error, the stream
+//     handler will signal region worker to exit, which will evict all active region states then.
 func (s *clientSuite) TestFailRegionReentrant(c *check.C) {
 	defer testleak.AfterTest(c)()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -2770,17 +2772,17 @@ func (s *clientSuite) TestFailRegionReentrant(c *check.C) {
 
 // TestClientV1UnlockRangeReentrant tests clientV1 can handle region reconnection
 // with unstable TiKV store correctly. The test workflow is as follows:
-// 1. kv client establishes two regions request, naming region-1, region-2, they
-//    belong to the same TiKV store.
-// 2. The region-1 is firstly established, yet region-2 has some delay after its
-//    region state is inserted into `pendingRegions`
-// 3. At this time the TiKV store crashes and `stream.Recv` returns error. In the
-//    defer function of `receiveFromStream`, all pending regions will be cleaned
-//    up, which means the region lock will be unlocked once for these regions.
-// 4. In step-2, the region-2 continues to run, it can't get store stream which
-//    has been deleted in step-3, so it will create new stream but fails because
-//    of unstable TiKV store, at this point, the kv client should handle with the
-//    pending region correctly.
+//  1. kv client establishes two regions request, naming region-1, region-2, they
+//     belong to the same TiKV store.
+//  2. The region-1 is firstly established, yet region-2 has some delay after its
+//     region state is inserted into `pendingRegions`
+//  3. At this time the TiKV store crashes and `stream.Recv` returns error. In the
+//     defer function of `receiveFromStream`, all pending regions will be cleaned
+//     up, which means the region lock will be unlocked once for these regions.
+//  4. In step-2, the region-2 continues to run, it can't get store stream which
+//     has been deleted in step-3, so it will create new stream but fails because
+//     of unstable TiKV store, at this point, the kv client should handle with the
+//     pending region correctly.
 func (s *clientSuite) TestClientV1UnlockRangeReentrant(c *check.C) {
 	defer testleak.AfterTest(c)()
 

@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/pingcap/errors"
-	"github.com/pingcap/tidb/kv"
+	"github.com/tikv/client-go/v2/tikv"
 	"go.uber.org/zap"
 )
 
@@ -31,6 +31,7 @@ const (
 	ctxKeyIsOwner      = ctxKey("isOwner")
 	ctxKeyTimezone     = ctxKey("timezone")
 	ctxKeyKVStorage    = ctxKey("kvStorage")
+	ctxEventFilter     = ctxKey("eventFilter")
 )
 
 // CaptureAddrFromCtx returns a capture ID stored in the specified context.
@@ -54,7 +55,7 @@ func PutTimezoneInCtx(ctx context.Context, timezone *time.Location) context.Cont
 }
 
 // PutKVStorageInCtx returns a new child context with the given tikv store
-func PutKVStorageInCtx(ctx context.Context, store kv.Storage) context.Context {
+func PutKVStorageInCtx(ctx context.Context, store tikv.Storage) context.Context {
 	return context.WithValue(ctx, ctxKeyKVStorage, store)
 }
 
@@ -87,8 +88,8 @@ func TimezoneFromCtx(ctx context.Context) *time.Location {
 }
 
 // KVStorageFromCtx returns a tikv store
-func KVStorageFromCtx(ctx context.Context) (kv.Storage, error) {
-	store, ok := ctx.Value(ctxKeyKVStorage).(kv.Storage)
+func KVStorageFromCtx(ctx context.Context) (tikv.Storage, error) {
+	store, ok := ctx.Value(ctxKeyKVStorage).(tikv.Storage)
 	if !ok {
 		return nil, errors.Errorf("context can not find the value associated with key: %s", ctxKeyKVStorage)
 	}
@@ -119,6 +120,18 @@ func ChangefeedIDFromCtx(ctx context.Context) string {
 // PutChangefeedIDInCtx returns a new child context with the specified changefeed ID stored.
 func PutChangefeedIDInCtx(ctx context.Context, changefeedID string) context.Context {
 	return context.WithValue(ctx, ctxKeyChangefeedID, changefeedID)
+}
+
+func EventFilterFromCtx(ctx context.Context) *KvFilter {
+	filter, ok := ctx.Value(ctxEventFilter).(*KvFilter)
+	if !ok {
+		return nil
+	}
+	return filter
+}
+
+func PutEventFilterInCtx(ctx context.Context, filter *KvFilter) context.Context {
+	return context.WithValue(ctx, ctxEventFilter, filter)
 }
 
 // ZapFieldCapture returns a zap field containing capture address

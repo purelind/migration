@@ -3,12 +3,12 @@
 # --workdir: work directory
 # --tlsdir: certificates directory
 
-set -e
+set -euxo pipefail
 
 OUT_DIR=
 TLS_DIR=
 
-while [[ ${1} ]]; do
+while [[ ${1-} ]]; do
 	case "${1}" in
 	--workdir)
 		OUT_DIR=${2}
@@ -98,6 +98,7 @@ api-version = 2
 enable-ttl = true
 # Disable creating a large temp file.
 reserve-space = "0MB"
+capacity = "1MB"
 [rocksdb]
 max-open-files = 4096
 [raftdb]

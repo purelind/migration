@@ -19,6 +19,8 @@ ifeq (${CDC_ENABLE_VENDOR}, 1)
 GOVENDORFLAG := -mod=vendor
 endif
 
+BUILD_FLAG := -buildvcs=false
+
 GOBUILD  := CGO_ENABLED=0 $(GO) build $(BUILD_FLAG) -trimpath $(GOVENDORFLAG)
 GOBUILD_DEBUG  := CGO_ENABLED=0 $(GO) build $(BUILD_FLAG) -gcflags "all=-N -l" $(GOVENDORFLAG)
 GOBUILDNOVENDOR  := CGO_ENABLED=0 $(GO) build $(BUILD_FLAG) -trimpath
@@ -41,9 +43,9 @@ FAILPOINT := tools/bin/failpoint-ctl
 FAILPOINT_ENABLE  := $$(echo $(FAILPOINT_DIR) | xargs $(FAILPOINT) enable >/dev/null)
 FAILPOINT_DISABLE := $$(echo $(FAILPOINT_DIR) | xargs $(FAILPOINT) disable >/dev/null)
 
-RELEASE_VERSION =
+RELEASE_VERSION ?=
 ifeq ($(RELEASE_VERSION),)
-	RELEASE_VERSION := v1.1.0-master
+	RELEASE_VERSION := v1.2-master
 	release_version_regex := ^cdc-v[0-9]\..*$$
 	release_branch_regex := "^cdc-[0-9]\.[0-9].*$$|^HEAD$$|^.*/*tags/cdc-v[0-9]\.[0-9]\..*$$"
 	ifneq ($(shell git rev-parse --abbrev-ref HEAD | egrep $(release_branch_regex)),)
@@ -115,11 +117,11 @@ unit_test: check_failpoint_ctl
 	|| { $(FAILPOINT_DISABLE); exit 1; }
 	$(FAILPOINT_DISABLE)
 
-unit_test_in_verify_ci: check_failpoint_ctl tools/bin/gotestsum gocov gocov-xml
+unit_test_in_verify_ci: check_failpoint_ctl gotestsum gocov gocov-xml
 	mkdir -p "$(TEST_DIR)"
 	$(FAILPOINT_ENABLE)
 	@export log_level=error;\
-	CGO_ENABLED=1 tools/bin/gotestsum --junitfile cdc-junit-report.xml -- -v -timeout 30m -p $(P) --race \
+	CGO_ENABLED=1 gotestsum --junitfile cdc-junit-report.xml -- -v -timeout 30m -p $(P) --race \
 	-covermode=atomic -coverprofile="$(TEST_DIR)/cov.unit.out" $(PACKAGES) \
 	|| { $(FAILPOINT_DISABLE); exit 1; }
 	gocov convert "$(TEST_DIR)/cov.unit.out" | gocov-xml > cdc-coverage.xml
@@ -200,7 +202,7 @@ tools/bin/goveralls: tools/check/go.mod
 	cd tools/check && $(GO) build -mod=mod -o ../bin/goveralls github.com/mattn/goveralls
 
 tools/bin/golangci-lint: tools/check/go.mod
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b tools/bin v1.46.2
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b tools/bin v1.55.2
 
 tools/bin/mockgen: tools/check/go.mod
 	cd tools/check && $(GO) build -mod=mod -o ../bin/mockgen github.com/golang/mock/mockgen
@@ -229,14 +231,14 @@ gocov:
 gocov-xml:
 	$(GO) install github.com/AlekSi/gocov-xml@latest
 
-tools/bin/gotestsum: tools/check/go.mod
-	cd tools/check && $(GO) build -mod=mod -o ../bin/gotestsum gotest.tools/gotestsum
+gotestsum:
+	$(GO) install gotest.tools/gotestsum@latest
 
 tools/bin/errdoc-gen: tools/check/go.mod
 	cd tools/check && $(GO) build -mod=mod -o ../bin/errdoc-gen github.com/pingcap/errors/errdoc-gen
 
 tools/bin/gosec:
-	curl -sfL https://raw.githubusercontent.com/securego/gosec/master/install.sh | sh -s -- -b tools/bin v2.12.0
+	curl -sfL https://raw.githubusercontent.com/securego/gosec/master/install.sh | sh -s -- -b tools/bin v2.18.2
 
 check_failpoint_ctl: tools/bin/failpoint-ctl
 
@@ -263,12 +265,31 @@ integration_test_build: check_failpoint_ctl rawkv_data cdc_state_checker
 	$(FAILPOINT_DISABLE)
 
 integration_test: prepare_test_binaries check_third_party_binary integration_test_build
-	tests/integration_tests/run.sh 
+	tests/integration_tests/run.sh "$(CASE)"
 	@bash <(curl -s https://codecov.io/bash) -F cdc -s /tmp/tikv_cdc_test -f *.out -t $(TIKV_MIGRATION_CODECOV_TOKEN)
 
+# To make try on integration tests easier.
+# Comment out the succeed cases and retry from the failed one.
+# TODO: find better method.
+integration_test_by_group: prepare_test_binaries check_third_party_binary integration_test_build
+	tests/integration_tests/run_group.sh G00
+	tests/integration_tests/run_group.sh G01
+	tests/integration_tests/run_group.sh G02
+	tests/integration_tests/run_group.sh G03
+	tests/integration_tests/run_group.sh G04
+	tests/integration_tests/run_group.sh G05
+	tests/integration_tests/run_group.sh G06
+	tests/integration_tests/run_group.sh G07
+	tests/integration_tests/run_group.sh G08
+	tests/integration_tests/run_group.sh G09
+	tests/integration_tests/run_group.sh G10
+	tests/integration_tests/run_group.sh G11
+	tests/integration_tests/run_group.sh G12
+	tests/integration_tests/run_group.sh others
 
 prepare_test_binaries:
 	cd scripts && ./download-integration-test-binaries.sh master && cd ..
+	touch prepare_test_binaries
 
 check_third_party_binary:
 	@which scripts/bin/tidb-server
